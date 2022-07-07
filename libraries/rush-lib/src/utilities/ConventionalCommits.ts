@@ -2,8 +2,6 @@
 import { RushConfiguration } from '../api/RushConfiguration';
 import { Git } from '../logic/Git';
 
-const cctypes = require('conventional-commit-types');
-
 export class ConventionalCommits {
   private readonly _git: Git;
 
@@ -24,6 +22,7 @@ export class ConventionalCommits {
   }
 
   private _isMajor(mergeCommitHash: string, projectFolder: string): boolean {
+    const cctypes = require('conventional-commit-types');
     const types = Object.keys(cctypes.types).join('|');
     const regexIsMajor: string = `(^(${types})(\(.*?\))?!:.*|^BREAKING CHANGE: )`;
     const isMajor: string = this._git.getFilteredCommits(mergeCommitHash, projectFolder, regexIsMajor);

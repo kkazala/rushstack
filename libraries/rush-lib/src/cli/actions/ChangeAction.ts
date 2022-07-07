@@ -1,42 +1,43 @@
 // Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
 // See LICENSE in the project root for license information.
 
-import * as os from 'os';
-import * as path from 'path';
 import * as child_process from 'child_process';
 import colors from 'colors/safe';
+import * as os from 'os';
+import * as path from 'path';
 
 import {
-  CommandLineFlagParameter,
-  CommandLineStringParameter,
-  CommandLineChoiceParameter
-} from '@rushstack/ts-command-line';
-import {
-  FileSystem,
   AlreadyReportedError,
+  ConsoleTerminalProvider,
+  FileSystem,
   Import,
-  Terminal,
   ITerminal,
-  ConsoleTerminalProvider
+  Terminal
 } from '@rushstack/node-core-library';
 import { getRepoRoot } from '@rushstack/package-deps-hash';
-
-import { RushConfigurationProject } from '../../api/RushConfigurationProject';
-import { IChangeFile, IChangeInfo, ChangeType } from '../../api/ChangeManagement';
-import { ChangeFile } from '../../api/ChangeFile';
-import { BaseRushAction } from './BaseRushAction';
-import { RushCommandLineParser } from '../RushCommandLineParser';
-import { ChangeFiles } from '../../logic/ChangeFiles';
 import {
-  VersionPolicy,
+  CommandLineChoiceParameter,
+  CommandLineFlagParameter,
+  CommandLineStringParameter
+} from '@rushstack/ts-command-line';
+
+import { ChangeFile } from '../../api/ChangeFile';
+import { ChangeType, IChangeFile, IChangeInfo } from '../../api/ChangeManagement';
+import { RushConfigurationProject } from '../../api/RushConfigurationProject';
+import {
   IndividualVersionPolicy,
   LockStepVersionPolicy,
+  VersionPolicy,
   VersionPolicyDefinitionName
 } from '../../api/VersionPolicy';
-import { ProjectChangeAnalyzer } from '../../logic/ProjectChangeAnalyzer';
+import { ChangeFiles } from '../../logic/ChangeFiles';
 import { Git } from '../../logic/Git';
+import { ProjectChangeAnalyzer } from '../../logic/ProjectChangeAnalyzer';
+import { RushCommandLineParser } from '../RushCommandLineParser';
+import { BaseRushAction } from './BaseRushAction';
 
 import type * as inquirerTypes from 'inquirer';
+import { ConventionalCommits } from '../../utilities/ConventionalCommits';
 const inquirer: typeof inquirerTypes = Import.lazy('inquirer', require);
 
 export class ChangeAction extends BaseRushAction {
@@ -50,6 +51,8 @@ export class ChangeAction extends BaseRushAction {
   private _bulkChangeMessageParameter!: CommandLineStringParameter;
   private _bulkChangeBumpTypeParameter!: CommandLineChoiceParameter;
   private _overwriteFlagParameter!: CommandLineFlagParameter;
+  private _showCommitsFlagParameter!: CommandLineFlagParameter;
+  private _recommendChangeTypeFlagParameter!: CommandLineFlagParameter;
 
   private _targetBranchName: string | undefined;
 
@@ -156,6 +159,15 @@ export class ChangeAction extends BaseRushAction {
       parameterLongName: BULK_BUMP_TYPE_LONG_NAME,
       alternatives: [...Object.keys(this._getBumpOptions())],
       description: `The bump type to apply to all changed projects if the ${BULK_LONG_NAME} flag is provided.`
+    });
+
+    this._showCommitsFlagParameter = this.defineFlagParameter({
+      parameterLongName: '--show-commits',
+      description: `Display commit messages for all the commits that require change file generation.`
+    });
+    this._recommendChangeTypeFlagParameter = this.defineFlagParameter({
+      parameterLongName: '--recommend-changetype',
+      description: `Based on the conventional commits, suggest change type.`
     });
   }
 
@@ -271,7 +283,9 @@ export class ChangeAction extends BaseRushAction {
       changeFileData = await this._promptForChangeFileData(
         promptModule,
         sortedProjectList,
-        existingChangeComments
+        existingChangeComments,
+        this._showCommitsFlagParameter.value,
+        this._recommendChangeTypeFlagParameter.value
       );
 
       if (this._isEmailRequired(changeFileData)) {
@@ -380,7 +394,9 @@ export class ChangeAction extends BaseRushAction {
   private async _promptForChangeFileData(
     promptModule: inquirerTypes.PromptModule,
     sortedProjectList: string[],
-    existingChangeComments: Map<string, string[]>
+    existingChangeComments: Map<string, string[]>,
+    showCommits: boolean,
+    recommendChangeType: boolean
   ): Promise<Map<string, IChangeFile>> {
     const changedFileData: Map<string, IChangeFile> = new Map<string, IChangeFile>();
 
@@ -388,7 +404,9 @@ export class ChangeAction extends BaseRushAction {
       const changeInfo: IChangeInfo | undefined = await this._askQuestions(
         promptModule,
         projectName,
-        existingChangeComments
+        existingChangeComments,
+        showCommits,
+        recommendChangeType
       );
       if (changeInfo) {
         // Save the info into the change file
@@ -415,10 +433,14 @@ export class ChangeAction extends BaseRushAction {
   private async _askQuestions(
     promptModule: inquirerTypes.PromptModule,
     packageName: string,
-    existingChangeComments: Map<string, string[]>
+    existingChangeComments: Map<string, string[]>,
+    showCommits: boolean,
+    recommendChangeType: boolean
   ): Promise<IChangeInfo | undefined> {
     console.log(`${os.EOL}${packageName}`);
     const comments: string[] | undefined = existingChangeComments.get(packageName);
+    let promptForComments: boolean = false;
+
     if (comments) {
       console.log(`Found existing comments:`);
       comments.forEach((comment) => {
@@ -444,9 +466,15 @@ export class ChangeAction extends BaseRushAction {
       if (appendComment === 'skip') {
         return undefined;
       } else {
-        return await this._promptForComments(promptModule, packageName);
+        promptForComments = true;
       }
     } else {
+      promptForComments = true;
+    }
+
+    this._parseCommits(packageName, showCommits, recommendChangeType);
+
+    if (promptForComments) {
       return await this._promptForComments(promptModule, packageName);
     }
   }
@@ -689,5 +717,36 @@ export class ChangeAction extends BaseRushAction {
 
   private _logNoChangeFileRequired(): void {
     console.log('No changes were detected to relevant packages on this branch. Nothing to do.');
+  }
+
+  /**
+   * Parses  commits that "belong" to change file
+   * if 'showCommits', git short log
+   * if 'recommendChangeType', recommends rush change type based on commit types and conventional commits convention
+   */
+  private _parseCommits(packageName: string, showCommits: boolean, recommendChangeType: boolean): void {
+    const projectInfo: RushConfigurationProject | undefined =
+      this.rushConfiguration.getProjectByName(packageName);
+    if (projectInfo !== undefined) {
+      const mergeCommitHash: string = this._git.getMergeBase(
+        this._targetBranch,
+        this._terminal,
+        !this._noFetchParameter.value
+      );
+      if (showCommits) {
+        this._git.getShortLog(mergeCommitHash, projectInfo.projectRelativeFolder);
+      }
+      if (recommendChangeType) {
+        const ccHelper: ConventionalCommits = new ConventionalCommits(this.rushConfiguration);
+        const changeType: string = ccHelper.getRecommendedChangeType(
+          mergeCommitHash,
+          projectInfo.projectRelativeFolder
+        );
+        console.log(
+          `Based on conventional commits convention, we recommend the following change type: ` +
+            colors.green(changeType)
+        );
+      }
+    }
   }
 }

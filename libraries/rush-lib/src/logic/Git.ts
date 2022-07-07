@@ -1,21 +1,21 @@
 // Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
 // See LICENSE in the project root for license information.
 
+import { AlreadyReportedError, Executable, ITerminal, Path } from '@rushstack/node-core-library';
+import { ensureGitMinimumVersion } from '@rushstack/package-deps-hash';
 import child_process from 'child_process';
-import gitInfo = require('git-repo-info');
+import colors from 'colors/safe';
 import * as os from 'os';
 import * as path from 'path';
-import * as url from 'url';
-import colors from 'colors/safe';
 import { trueCasePathSync } from 'true-case-path';
-import { Executable, AlreadyReportedError, Path, ITerminal } from '@rushstack/node-core-library';
-import { ensureGitMinimumVersion } from '@rushstack/package-deps-hash';
+import * as url from 'url';
+import gitInfo = require('git-repo-info');
 
-import { Utilities } from '../utilities/Utilities';
-import { GitEmailPolicy } from './policy/GitEmailPolicy';
-import { RushConfiguration } from '../api/RushConfiguration';
 import { EnvironmentConfiguration } from '../api/EnvironmentConfiguration';
+import { RushConfiguration } from '../api/RushConfiguration';
+import { Utilities } from '../utilities/Utilities';
 import { IChangedGitStatusEntry, IGitStatusEntry, parseGitStatus } from './GitStatusParser';
+import { GitEmailPolicy } from './policy/GitEmailPolicy';
 
 export const DEFAULT_GIT_TAG_SEPARATOR: string = '_';
 
@@ -421,6 +421,32 @@ export class Git {
     ]);
 
     return parseGitStatus(output);
+  }
+
+  public getShortLog(mergeCommitHash: string, projectRelativeFolder: string): void {
+    const gitPath: string = this.getGitPathOrThrow();
+    console.log(`Commit history:`);
+    Utilities.executeCommand({
+      command: gitPath,
+      args: ['shortlog', `${mergeCommitHash}...`, '--', projectRelativeFolder],
+      workingDirectory: this._rushConfiguration.rushJsonFolder
+    });
+  }
+
+  public getFilteredCommits(mergeCommitHash: string, projectRelativeFolder: string, pattern: string) {
+    const gitPath: string = this.getGitPathOrThrow();
+    const output: string = this._executeGitCommandAndCaptureOutput(gitPath, [
+      'rev-list',
+      `${mergeCommitHash}...`,
+      '--count',
+      '--extended-regexp',
+      '--grep',
+      pattern,
+      '--',
+      projectRelativeFolder
+    ]);
+
+    return output;
   }
 
   /**

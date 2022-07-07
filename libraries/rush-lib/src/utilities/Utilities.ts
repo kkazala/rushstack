@@ -1,16 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
 // See LICENSE in the project root for license information.
 
+import {
+  FileConstants,
+  FileSystem,
+  FileSystemStats,
+  IPackageJson,
+  JsonFile
+} from '@rushstack/node-core-library';
 import * as child_process from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
-import {
-  JsonFile,
-  IPackageJson,
-  FileSystem,
-  FileConstants,
-  FileSystemStats
-} from '@rushstack/node-core-library';
 import type * as stream from 'stream';
 
 import { RushConfiguration } from '../api/RushConfiguration';

@@ -51,7 +51,7 @@ export class ChangeAction extends BaseRushAction {
   private _bulkChangeMessageParameter!: CommandLineStringParameter;
   private _bulkChangeBumpTypeParameter!: CommandLineChoiceParameter;
   private _overwriteFlagParameter!: CommandLineFlagParameter;
-  private _showCommitsFlagParameter!: CommandLineFlagParameter;
+  private _showCommitsFlagParameter!: CommandLineChoiceParameter;
   private _recommendChangeTypeFlagParameter!: CommandLineFlagParameter;
 
   private _targetBranchName: string | undefined;
@@ -161,8 +161,10 @@ export class ChangeAction extends BaseRushAction {
       description: `The bump type to apply to all changed projects if the ${BULK_LONG_NAME} flag is provided.`
     });
 
-    this._showCommitsFlagParameter = this.defineFlagParameter({
+    this._showCommitsFlagParameter = this.defineChoiceParameter({
       parameterLongName: '--show-commits',
+      alternatives: ['shortlog', 'full'],
+      defaultValue: 'shortlog',
       description: `Display commit messages for all the commits that require change file generation.`
     });
     this._recommendChangeTypeFlagParameter = this.defineFlagParameter({
@@ -395,7 +397,7 @@ export class ChangeAction extends BaseRushAction {
     promptModule: inquirerTypes.PromptModule,
     sortedProjectList: string[],
     existingChangeComments: Map<string, string[]>,
-    showCommits: boolean,
+    showCommits: string | undefined,
     recommendChangeType: boolean
   ): Promise<Map<string, IChangeFile>> {
     const changedFileData: Map<string, IChangeFile> = new Map<string, IChangeFile>();
@@ -434,7 +436,7 @@ export class ChangeAction extends BaseRushAction {
     promptModule: inquirerTypes.PromptModule,
     packageName: string,
     existingChangeComments: Map<string, string[]>,
-    showCommits: boolean,
+    showCommits: string | undefined,
     recommendChangeType: boolean
   ): Promise<IChangeInfo | undefined> {
     console.log(`${os.EOL}${packageName}`);
@@ -477,6 +479,9 @@ export class ChangeAction extends BaseRushAction {
     if (promptForComments) {
       return await this._promptForComments(promptModule, packageName);
     }
+
+    //delete gitLogs temp folder created by _parseCommits
+    this._deleteGitLogTempFolder();
   }
 
   private async _promptForComments(
@@ -719,12 +724,27 @@ export class ChangeAction extends BaseRushAction {
     console.log('No changes were detected to relevant packages on this branch. Nothing to do.');
   }
 
+  private _ensureGitLogTempFolder() {
+    const targetFolder = path.join(this.rushConfiguration.commonTempFolder, 'gitlog');
+    FileSystem.ensureFolder(targetFolder);
+    return targetFolder;
+  }
+  private _deleteGitLogTempFolder() {
+    const targetFolder = path.join(this.rushConfiguration.commonTempFolder, 'gitlog');
+    FileSystem.deleteFolder(targetFolder);
+    return targetFolder;
+  }
+
   /**
    * Parses  commits that "belong" to change file
    * if 'showCommits', git short log
    * if 'recommendChangeType', recommends rush change type based on commit types and conventional commits convention
    */
-  private _parseCommits(packageName: string, showCommits: boolean, recommendChangeType: boolean): void {
+  private _parseCommits(
+    packageName: string,
+    showCommits: string | undefined,
+    recommendChangeType: boolean
+  ): void {
     const projectInfo: RushConfigurationProject | undefined =
       this.rushConfiguration.getProjectByName(packageName);
     if (projectInfo !== undefined) {
@@ -733,8 +753,22 @@ export class ChangeAction extends BaseRushAction {
         this._terminal,
         !this._noFetchParameter.value
       );
-      if (showCommits) {
-        this._git.getShortLog(mergeCommitHash, projectInfo.projectRelativeFolder);
+      if (showCommits !== undefined) {
+        switch (showCommits) {
+          case 'shortlog':
+            console.log(`  Commit history:`);
+            this._git.getShortLog(mergeCommitHash, projectInfo.projectRelativeFolder);
+            break;
+          case 'full':
+            const destFolder = this._ensureGitLogTempFolder();
+            const fileName = projectInfo.projectRelativeFolder.replace('/', '_').replace('\\', '_');
+            const targetPath = path.join(destFolder, `${fileName}.txt`);
+
+            this._git.getFullLog(mergeCommitHash, projectInfo.projectRelativeFolder, targetPath);
+            console.log(`  Commit history: '` + colors.yellow + targetPath + colors.reset + `'`);
+
+            break;
+        }
       }
       if (recommendChangeType) {
         const ccHelper: ConventionalCommits = new ConventionalCommits(this.rushConfiguration);

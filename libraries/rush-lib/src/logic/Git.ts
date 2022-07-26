@@ -425,10 +425,31 @@ export class Git {
 
   public getShortLog(mergeCommitHash: string, projectRelativeFolder: string): void {
     const gitPath: string = this.getGitPathOrThrow();
-    console.log(`Commit history:`);
     Utilities.executeCommand({
       command: gitPath,
-      args: ['shortlog', `${mergeCommitHash}...`, '--', projectRelativeFolder],
+      args: [
+        'shortlog',
+        `${mergeCommitHash}...`,
+        // ${since},
+        '--',
+        projectRelativeFolder
+      ],
+      workingDirectory: this._rushConfiguration.rushJsonFolder
+    });
+  }
+  public getFullLog(mergeCommitHash: string, projectRelativeFolder: string, targetPath: string) {
+    const gitPath: string = this.getGitPathOrThrow();
+    Utilities.executeCommand({
+      command: gitPath,
+      args: [
+        '--no-pager',
+        'log',
+        `${mergeCommitHash}...`,
+        // ${since},
+        '--',
+        projectRelativeFolder,
+        `> ${targetPath}`
+      ],
       workingDirectory: this._rushConfiguration.rushJsonFolder
     });
   }

@@ -1,6 +1,53 @@
 # Change Log - @rushstack/hashed-folder-copy-plugin
 
-This log was last generated on Mon, 04 Jul 2022 15:15:13 GMT and should not be manually modified.
+This log was last generated on Wed, 10 Aug 2022 09:52:12 GMT and should not be manually modified.
+
+## 0.1.27
+Wed, 10 Aug 2022 09:52:12 GMT
+
+_Version update only_
+
+## 0.1.26
+Wed, 10 Aug 2022 08:12:16 GMT
+
+_Version update only_
+
+## 0.1.25
+Thu, 04 Aug 2022 00:56:57 GMT
+
+### Patches
+
+- Fix an issue where the plugin will throw if the folder being required contains subfolders.
+
+## 0.1.24
+Wed, 03 Aug 2022 18:40:35 GMT
+
+_Version update only_
+
+## 0.1.23
+Mon, 01 Aug 2022 02:45:32 GMT
+
+_Version update only_
+
+## 0.1.22
+Thu, 21 Jul 2022 23:30:27 GMT
+
+_Version update only_
+
+## 0.1.21
+Thu, 21 Jul 2022 00:16:14 GMT
+
+_Version update only_
+
+## 0.1.20
+Wed, 13 Jul 2022 21:31:13 GMT
+
+_Version update only_
+
+## 0.1.19
+Fri, 08 Jul 2022 15:17:46 GMT
+
+_Version update only_
 
 ## 0.1.18
 Mon, 04 Jul 2022 15:15:13 GMT

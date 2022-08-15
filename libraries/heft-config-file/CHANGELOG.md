@@ -1,6 +1,27 @@
 # Change Log - @rushstack/heft-config-file
 
-This log was last generated on Tue, 28 Jun 2022 22:47:13 GMT and should not be manually modified.
+This log was last generated on Wed, 03 Aug 2022 18:40:35 GMT and should not be manually modified.
+
+## 0.9.2
+Wed, 03 Aug 2022 18:40:35 GMT
+
+_Version update only_
+
+## 0.9.1
+Mon, 01 Aug 2022 02:45:32 GMT
+
+_Version update only_
+
+## 0.9.0
+Wed, 13 Jul 2022 21:31:13 GMT
+
+### Minor changes
+
+- (BREAKING API CHANGE) Deprecate `PathResolutionMethod.NodeResolve` in favor of `PathResolutionMethod.nodeResolve`.
+
+### Patches
+
+- Improve types strictness of `IJsonPathsMetadata`
 
 ## 0.8.10
 Tue, 28 Jun 2022 22:47:13 GMT

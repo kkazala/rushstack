@@ -12,7 +12,8 @@ import {
   FileSystem,
   Import,
   ITerminal,
-  Terminal
+  Terminal,
+  Text
 } from '@rushstack/node-core-library';
 import { getRepoRoot } from '@rushstack/package-deps-hash';
 import {
@@ -452,6 +453,7 @@ export class ChangeAction extends BaseRushAction {
     console.log(`${os.EOL}${packageName}`);
     const comments: string[] | undefined = existingChangeComments.get(packageName);
     let promptForComments: boolean = false;
+    let recommendedChange: string | undefined;
 
     if (comments) {
       console.log(`Found existing comments:`);
@@ -485,7 +487,7 @@ export class ChangeAction extends BaseRushAction {
     }
 
     if (showCommits || recommendChangeType) {
-      this._parseCommits(
+      recommendedChange = this._parseCommits(
         packageName,
         showCommits,
         recommendChangeType,
@@ -494,13 +496,14 @@ export class ChangeAction extends BaseRushAction {
     }
 
     if (promptForComments) {
-      return await this._promptForComments(promptModule, packageName);
+      return await this._promptForComments(promptModule, packageName, recommendedChange);
     }
   }
 
   private async _promptForComments(
     promptModule: inquirerTypes.PromptModule,
-    packageName: string
+    packageName: string,
+    recommendedChange: string | undefined
   ): Promise<IChangeInfo | undefined> {
     const bumpOptions: { [type: string]: string } = this._getBumpOptions(packageName);
     const { comment }: { comment: string } = await promptModule({
@@ -523,7 +526,7 @@ export class ChangeAction extends BaseRushAction {
             name: bumpOptions[option]
           };
         }),
-        default: 'patch',
+        default: recommendedChange ?? 'patch',
         message: 'Select the type of change:',
         name: 'bumpType',
         type: 'list'
@@ -754,7 +757,8 @@ export class ChangeAction extends BaseRushAction {
     showCommits: string | undefined,
     recommendChangeType: boolean,
     timeStamp: Date | undefined
-  ): void {
+  ): string | undefined {
+    let recommendedChange: string | undefined;
     const projectInfo: RushConfigurationProject | undefined =
       this.rushConfiguration.getProjectByName(packageName);
     if (projectInfo !== undefined) {
@@ -771,7 +775,7 @@ export class ChangeAction extends BaseRushAction {
 
       if (commitsCount === 0) {
         this._printCommitsWarning(projectInfo.projectRelativeFolder, timeStamp);
-        return;
+        return undefined;
       }
 
       if (showCommits !== undefined) {
@@ -786,16 +790,17 @@ export class ChangeAction extends BaseRushAction {
 
       if (recommendChangeType) {
         const ccHelper: ConventionalCommits = new ConventionalCommits(this.rushConfiguration, timeStamp);
-        const changeType: string = ccHelper.getRecommendedChangeType(
+        recommendedChange = ccHelper.getRecommendedChangeType(
           mergeCommitHash,
           projectInfo.projectRelativeFolder
         );
         console.log(
           `Based on https://www.conventionalcommits.org/ convention, the following change type is recommended: ` +
-            colors.green(changeType)
+            colors.green(recommendedChange)
         );
       }
     }
+    return recommendedChange;
   }
   /**
    * If 0 commits are found, prints a warning message
@@ -804,8 +809,8 @@ export class ChangeAction extends BaseRushAction {
     const noCommitsMsg: string =
       timeStamp === undefined
         ? `No commits found for ${projectRelativeFolder}`
-        : `No commits found for ${projectRelativeFolder} since ${timeStamp.toString()}`;
-    console.log(`${noCommitsMsg}: `);
+        : `No commits found for ${projectRelativeFolder} since ${timeStamp.toLocaleString()}`;
+    console.log(`${noCommitsMsg}`);
   }
 
   /**
@@ -832,7 +837,8 @@ export class ChangeAction extends BaseRushAction {
         this._git.getShortLog(mergeCommitHash, timeStamp, projectRelativeFolder);
         break;
       case 'long':
-        const fileName: string = projectRelativeFolder.replace('/', '_').replace('\\', '_') + '.txt';
+        const fileName: string =
+          Text.replaceAll(Text.replaceAll(projectRelativeFolder, '/', '_'), '\\', '_') + '.log';
         const targetPath: string = path.join(this.rushConfiguration.commonTempFolder, 'gitlog', fileName);
         this._git.getFullLog(mergeCommitHash, timeStamp, projectRelativeFolder, targetPath);
         console.log(`${getCommitsHeader}. See ` + colors.green(targetPath));

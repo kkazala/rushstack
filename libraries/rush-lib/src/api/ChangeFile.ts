@@ -7,10 +7,10 @@ import gitInfo = require('git-repo-info');
 
 import { JsonFile } from '@rushstack/node-core-library';
 
+import { Text } from '@rushstack/node-core-library';
 import { Git } from '../logic/Git';
 import { IChangeFile, IChangeInfo } from './ChangeManagement';
 import { RushConfiguration } from './RushConfiguration';
-
 /**
  * This class represents a single change file.
  */
@@ -99,15 +99,19 @@ export class ChangeFile {
     // filePath === "branch-Name_2016-10-19-22-47.json"
 
     // Parse out 2 capture groups, the date and the time
-    const dateParseRegex: RegExp = /_([0-9]{4}-[0-9]{2}-[0-9]{2}).*([0-9]{2}-[0-9]{2}(-[0-9]{2})?)/;
+    const dateParseRegex: RegExp = /_([0-9]{4}-[0-9]{2}-[0-9]{2})-(.*).json$/;
 
     // matches[1] === "2016-10-19"
-    // matches[2] === "22:47:49"
+    // matches[2] === "22-47-49"
+    // matches[2] === "22-47"
     const matches: RegExpMatchArray | null = filePath.match(dateParseRegex);
 
     if (matches) {
-      const formattedTime: string = matches[2].replace('-', ':');
-      return new Date(`${matches[1]}T${formattedTime}Z`);
+      const formattedTime: string = Text.replaceAll(matches[2], '-', ':');
+
+      // toLocaleString:  19/19/2016, 22:47:49
+      // toISOString:     2016-10-19T20:47:49.000Z
+      return new Date(`${matches[1]}T${formattedTime}`);
     }
     return undefined;
   }

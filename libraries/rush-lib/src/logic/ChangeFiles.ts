@@ -1,14 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
 // See LICENSE in the project root for license information.
 
-import * as path from 'path';
+import { Import, JsonFile, JsonSchema } from '@rushstack/node-core-library';
 import { EOL } from 'os';
-import { JsonFile, JsonSchema, Import } from '@rushstack/node-core-library';
+import * as path from 'path';
+import { ChangeFile } from '../api/ChangeFile';
 
-import { Utilities } from '../utilities/Utilities';
-import { IChangeInfo } from '../api/ChangeManagement';
 import { IChangelog } from '../api/Changelog';
+import { IChangeInfo } from '../api/ChangeManagement';
 import { RushConfiguration } from '../api/RushConfiguration';
+import { Utilities } from '../utilities/Utilities';
 
 const glob: typeof import('glob') = Import.lazy('glob', require);
 
@@ -99,6 +100,29 @@ export class ChangeFiles {
         });
       } else {
         throw new Error(`Invalid change file: ${filePath}`);
+      }
+    });
+    return changes;
+  }
+
+  public static getChangeTimestamps(newChangeFilePaths: string[]): Map<string, Date> {
+    const changes: Map<string, Date> = new Map<string, Date>();
+
+    newChangeFilePaths.forEach((filePath) => {
+      const timeStamp: Date | undefined = ChangeFile.parseTimestamp(filePath);
+      if (timeStamp) {
+        const changeFile: IChangeInfo = JsonFile.load(filePath);
+        if (changeFile && changeFile.changes) {
+          if (!changes.get(changeFile.packageName)) {
+            changes.set(changeFile.packageName, timeStamp);
+          } else {
+            if (timeStamp.getTime() > changes.get(changeFile.packageName)!.getTime()) {
+              changes.set(changeFile.packageName, timeStamp);
+            }
+          }
+        } else {
+          throw new Error(`Invalid change file: ${filePath}`);
+        }
       }
     });
     return changes;

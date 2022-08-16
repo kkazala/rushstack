@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
 // See LICENSE in the project root for license information.
 
-import { AlreadyReportedError, Executable, ITerminal, Path } from '@rushstack/node-core-library';
+import { AlreadyReportedError, Executable, FileSystem, ITerminal, Path } from '@rushstack/node-core-library';
 import { ensureGitMinimumVersion } from '@rushstack/package-deps-hash';
 import child_process from 'child_process';
 import colors from 'colors/safe';
@@ -422,47 +422,77 @@ export class Git {
 
     return parseGitStatus(output);
   }
+  public getCommitsCount(
+    mergeCommitHash: string,
+    since: Date | undefined,
+    projectRelativeFolder: string
+  ): number {
+    const gitPath: string = this.getGitPathOrThrow();
+    const args: string[] = ['rev-list', `${mergeCommitHash}...`, '--count'];
 
-  public getShortLog(mergeCommitHash: string, projectRelativeFolder: string): void {
-    const gitPath: string = this.getGitPathOrThrow();
-    Utilities.executeCommand({
-      command: gitPath,
-      args: [
-        'shortlog',
-        `${mergeCommitHash}...`,
-        // ${since},
-        '--',
-        projectRelativeFolder
-      ],
-      workingDirectory: this._rushConfiguration.rushJsonFolder
-    });
-  }
-  public getFullLog(mergeCommitHash: string, projectRelativeFolder: string, targetPath: string) {
-    const gitPath: string = this.getGitPathOrThrow();
-    Utilities.executeCommand({
-      command: gitPath,
-      args: [
-        '--no-pager',
-        'log',
-        `${mergeCommitHash}...`,
-        // ${since},
-        '--',
-        projectRelativeFolder,
-        `> ${targetPath}`
-      ],
-      workingDirectory: this._rushConfiguration.rushJsonFolder
-    });
-  }
-
-  public getFilteredCommits(mergeCommitHash: string, projectRelativeFolder: string, pattern: string) {
-    const gitPath: string = this.getGitPathOrThrow();
+    if (since !== undefined) {
+      args.push('--since', since.toISOString());
+    }
     const output: string = this._executeGitCommandAndCaptureOutput(gitPath, [
+      ...args,
+      '--',
+      projectRelativeFolder
+    ]);
+
+    return parseInt(output.trim(), 10);
+  }
+
+  public getShortLog(mergeCommitHash: string, since: Date | undefined, projectRelativeFolder: string): void {
+    const gitPath: string = this.getGitPathOrThrow();
+    const args: string[] = ['shortlog', `${mergeCommitHash}...`];
+    if (since !== undefined) {
+      args.push('--since', since.toISOString());
+    }
+    Utilities.executeCommand({
+      command: gitPath,
+      args: [...args, '--', projectRelativeFolder],
+      workingDirectory: this._rushConfiguration.rushJsonFolder
+    });
+  }
+  public getFullLog(
+    mergeCommitHash: string,
+    since: Date | undefined,
+    projectRelativeFolder: string,
+    fileName: string
+  ): void {
+    const gitPath: string = this.getGitPathOrThrow();
+    const args: string[] = ['--no-pager', 'log', `${mergeCommitHash}...`];
+    if (since !== undefined) {
+      args.push('--since', since.toISOString());
+    }
+    const output: string = this._executeGitCommandAndCaptureOutput(gitPath, [
+      ...args,
+      '--',
+      projectRelativeFolder
+    ]);
+    FileSystem.writeFile(fileName, output, { ensureFolderExists: true });
+  }
+
+  public getFilteredCommits(
+    mergeCommitHash: string,
+    since: Date | undefined,
+    projectRelativeFolder: string,
+    pattern: string
+  ): string {
+    const gitPath: string = this.getGitPathOrThrow();
+    const args: string[] = [
       'rev-list',
       `${mergeCommitHash}...`,
       '--count',
       '--extended-regexp',
       '--grep',
-      pattern,
+      pattern
+    ];
+    if (since !== undefined) {
+      args.push('--since', since.toISOString());
+    }
+    const output: string = this._executeGitCommandAndCaptureOutput(gitPath, [
+      ...args,
       '--',
       projectRelativeFolder
     ]);

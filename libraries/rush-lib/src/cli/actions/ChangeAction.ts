@@ -163,8 +163,7 @@ export class ChangeAction extends BaseRushAction {
 
     this._showCommitsFlagParameter = this.defineChoiceParameter({
       parameterLongName: '--show-commits',
-      alternatives: ['shortlog', 'full'],
-      defaultValue: 'shortlog',
+      alternatives: ['short', 'long'],
       description: `Display commit messages for all the commits that require change file generation.`
     });
     this._recommendChangeTypeFlagParameter = this.defineFlagParameter({
@@ -279,13 +278,18 @@ export class ChangeAction extends BaseRushAction {
     } else {
       interactiveMode = true;
 
-      const existingChangeComments: Map<string, string[]> = ChangeFiles.getChangeComments(
-        this._getChangeFiles()
-      );
+      const changeFiles: string[] = this._getChangeFiles();
+      const existingChangeComments: Map<string, string[]> = ChangeFiles.getChangeComments(changeFiles);
+      const existingChangeTimestamps: Map<string, Date> | undefined =
+        this._showCommitsFlagParameter.value !== undefined || this._recommendChangeTypeFlagParameter.value
+          ? ChangeFiles.getChangeTimestamps(changeFiles)
+          : undefined;
+
       changeFileData = await this._promptForChangeFileData(
         promptModule,
         sortedProjectList,
         existingChangeComments,
+        existingChangeTimestamps || undefined,
         this._showCommitsFlagParameter.value,
         this._recommendChangeTypeFlagParameter.value
       );
@@ -312,6 +316,9 @@ export class ChangeAction extends BaseRushAction {
       );
     } catch (error) {
       throw new Error(`There was an error creating a change file: ${(error as Error).toString()}`);
+    } finally {
+      //delete gitLogs temp folder created by _parseCommits, if exists
+      this._deleteGitLogTempFolder();
     }
   }
 
@@ -397,6 +404,7 @@ export class ChangeAction extends BaseRushAction {
     promptModule: inquirerTypes.PromptModule,
     sortedProjectList: string[],
     existingChangeComments: Map<string, string[]>,
+    existingChangeTimestamps: Map<string, Date> | undefined,
     showCommits: string | undefined,
     recommendChangeType: boolean
   ): Promise<Map<string, IChangeFile>> {
@@ -407,6 +415,7 @@ export class ChangeAction extends BaseRushAction {
         promptModule,
         projectName,
         existingChangeComments,
+        existingChangeTimestamps,
         showCommits,
         recommendChangeType
       );
@@ -436,6 +445,7 @@ export class ChangeAction extends BaseRushAction {
     promptModule: inquirerTypes.PromptModule,
     packageName: string,
     existingChangeComments: Map<string, string[]>,
+    existingChangeTimestamps: Map<string, Date> | undefined,
     showCommits: string | undefined,
     recommendChangeType: boolean
   ): Promise<IChangeInfo | undefined> {
@@ -474,14 +484,18 @@ export class ChangeAction extends BaseRushAction {
       promptForComments = true;
     }
 
-    this._parseCommits(packageName, showCommits, recommendChangeType);
+    if (showCommits || recommendChangeType) {
+      this._parseCommits(
+        packageName,
+        showCommits,
+        recommendChangeType,
+        existingChangeTimestamps?.get(packageName)
+      );
+    }
 
     if (promptForComments) {
       return await this._promptForComments(promptModule, packageName);
     }
-
-    //delete gitLogs temp folder created by _parseCommits
-    this._deleteGitLogTempFolder();
   }
 
   private async _promptForComments(
@@ -724,26 +738,22 @@ export class ChangeAction extends BaseRushAction {
     console.log('No changes were detected to relevant packages on this branch. Nothing to do.');
   }
 
-  private _ensureGitLogTempFolder() {
-    const targetFolder = path.join(this.rushConfiguration.commonTempFolder, 'gitlog');
-    FileSystem.ensureFolder(targetFolder);
-    return targetFolder;
-  }
-  private _deleteGitLogTempFolder() {
-    const targetFolder = path.join(this.rushConfiguration.commonTempFolder, 'gitlog');
+  private _deleteGitLogTempFolder(): string {
+    const targetFolder: string = path.join(this.rushConfiguration.commonTempFolder, 'gitlog');
     FileSystem.deleteFolder(targetFolder);
     return targetFolder;
   }
 
   /**
    * Parses  commits that "belong" to change file
-   * if 'showCommits', git short log
+   * if 'showCommits', `git short log` or `git log --no-pager` is used
    * if 'recommendChangeType', recommends rush change type based on commit types and conventional commits convention
    */
   private _parseCommits(
     packageName: string,
     showCommits: string | undefined,
-    recommendChangeType: boolean
+    recommendChangeType: boolean,
+    timeStamp: Date | undefined
   ): void {
     const projectInfo: RushConfigurationProject | undefined =
       this.rushConfiguration.getProjectByName(packageName);
@@ -753,34 +763,80 @@ export class ChangeAction extends BaseRushAction {
         this._terminal,
         !this._noFetchParameter.value
       );
-      if (showCommits !== undefined) {
-        switch (showCommits) {
-          case 'shortlog':
-            console.log(`  Commit history:`);
-            this._git.getShortLog(mergeCommitHash, projectInfo.projectRelativeFolder);
-            break;
-          case 'full':
-            const destFolder = this._ensureGitLogTempFolder();
-            const fileName = projectInfo.projectRelativeFolder.replace('/', '_').replace('\\', '_');
-            const targetPath = path.join(destFolder, `${fileName}.txt`);
+      const commitsCount: number = this._git.getCommitsCount(
+        mergeCommitHash,
+        timeStamp,
+        projectInfo.projectRelativeFolder
+      );
 
-            this._git.getFullLog(mergeCommitHash, projectInfo.projectRelativeFolder, targetPath);
-            console.log(`  Commit history: '` + colors.yellow + targetPath + colors.reset + `'`);
-
-            break;
-        }
+      if (commitsCount === 0) {
+        this._printCommitsWarning(projectInfo.projectRelativeFolder, timeStamp);
+        return;
       }
+
+      if (showCommits !== undefined) {
+        this._printCommits(
+          showCommits,
+          mergeCommitHash,
+          timeStamp,
+          commitsCount,
+          projectInfo.projectRelativeFolder
+        );
+      }
+
       if (recommendChangeType) {
-        const ccHelper: ConventionalCommits = new ConventionalCommits(this.rushConfiguration);
+        const ccHelper: ConventionalCommits = new ConventionalCommits(this.rushConfiguration, timeStamp);
         const changeType: string = ccHelper.getRecommendedChangeType(
           mergeCommitHash,
           projectInfo.projectRelativeFolder
         );
         console.log(
-          `Based on conventional commits convention, we recommend the following change type: ` +
+          `Based on https://www.conventionalcommits.org/ convention, the following change type is recommended: ` +
             colors.green(changeType)
         );
       }
+    }
+  }
+  /**
+   * If 0 commits are found, prints a warning message
+   */
+  private _printCommitsWarning(projectRelativeFolder: string, timeStamp: Date | undefined): void {
+    const noCommitsMsg: string =
+      timeStamp === undefined
+        ? `No commits found for ${projectRelativeFolder}`
+        : `No commits found for ${projectRelativeFolder} since ${timeStamp.toString()}`;
+    console.log(`${noCommitsMsg}: `);
+  }
+
+  /**
+   * Prints  commits that "belong" to change file
+   * if '--show-commits shortlog', `git short log` is used to print commits to terminal
+   * if '--show-commits full', `git log` is used, and the output is saved to a file
+   * the generated files are deleted automatically after change files are created/skipped
+   */
+  private _printCommits(
+    logFormat: string,
+    mergeCommitHash: string,
+    timeStamp: Date | undefined,
+    commitsCount: number,
+    projectRelativeFolder: string
+  ): void {
+    const getCommitsHeader: string =
+      timeStamp === undefined
+        ? `${commitsCount} commit(s) found`
+        : `${commitsCount} commit(s) found since ${timeStamp.toLocaleString()}`;
+
+    switch (logFormat) {
+      case 'short':
+        console.log(`${getCommitsHeader}:`);
+        this._git.getShortLog(mergeCommitHash, timeStamp, projectRelativeFolder);
+        break;
+      case 'long':
+        const fileName: string = projectRelativeFolder.replace('/', '_').replace('\\', '_') + '.txt';
+        const targetPath: string = path.join(this.rushConfiguration.commonTempFolder, 'gitlog', fileName);
+        this._git.getFullLog(mergeCommitHash, timeStamp, projectRelativeFolder, targetPath);
+        console.log(`${getCommitsHeader}. See ` + colors.green(targetPath));
+        break;
     }
   }
 }

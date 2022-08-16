@@ -2,11 +2,21 @@
 import { RushConfiguration } from '../api/RushConfiguration';
 import { Git } from '../logic/Git';
 
+export interface IConventionalCommitsTypes {
+  types: {
+    [key: string]: {
+      description: string;
+      title: string;
+    };
+  };
+}
 export class ConventionalCommits {
   private readonly _git: Git;
+  private _since: Date | undefined;
 
-  public constructor(rushConfiguration: RushConfiguration) {
+  public constructor(rushConfiguration: RushConfiguration, since: Date | undefined) {
     this._git = new Git(rushConfiguration);
+    this._since = since;
   }
 
   public getRecommendedChangeType(mergeCommitHash: string, projectFolder: string): string {
@@ -22,23 +32,38 @@ export class ConventionalCommits {
   }
 
   private _isMajor(mergeCommitHash: string, projectFolder: string): boolean {
-    const cctypes = require('conventional-commit-types');
+    const cctypes: IConventionalCommitsTypes = require('conventional-commit-types');
     const types: string = Object.keys(cctypes.types).join('|');
     const regexIsMajor: string = `(^(${types})(\(.*?\))?!:.*|^BREAKING CHANGE: )`;
-    const isMajor: string = this._git.getFilteredCommits(mergeCommitHash, projectFolder, regexIsMajor);
+    const isMajor: string = this._git.getFilteredCommits(
+      mergeCommitHash,
+      this._since,
+      projectFolder,
+      regexIsMajor
+    );
 
     return parseInt(isMajor) > 0;
   }
 
   private _isMinor(mergeCommitHash: string, projectFolder: string): boolean {
     const regexIsMinor: string = '^feat((.*?))?:';
-    const isMinor: string = this._git.getFilteredCommits(mergeCommitHash, projectFolder, regexIsMinor);
+    const isMinor: string = this._git.getFilteredCommits(
+      mergeCommitHash,
+      this._since,
+      projectFolder,
+      regexIsMinor
+    );
     return parseInt(isMinor) > 0;
   }
 
   private _isPatch(mergeCommitHash: string, projectFolder: string): boolean {
     const regexIsPatch: string = '^fix((.*?))?:';
-    const isPatch: string = this._git.getFilteredCommits(mergeCommitHash, projectFolder, regexIsPatch);
+    const isPatch: string = this._git.getFilteredCommits(
+      mergeCommitHash,
+      this._since,
+      projectFolder,
+      regexIsPatch
+    );
     return parseInt(isPatch) > 0;
   }
 }

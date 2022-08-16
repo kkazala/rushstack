@@ -7,9 +7,9 @@ import gitInfo = require('git-repo-info');
 
 import { JsonFile } from '@rushstack/node-core-library';
 
-import { RushConfiguration } from './RushConfiguration';
-import { IChangeFile, IChangeInfo } from './ChangeManagement';
 import { Git } from '../logic/Git';
+import { IChangeFile, IChangeInfo } from './ChangeManagement';
+import { RushConfiguration } from './RushConfiguration';
 
 /**
  * This class represents a single change file.
@@ -93,6 +93,23 @@ export class ChangeFile {
       filename
     );
     return filePath;
+  }
+  public static parseTimestamp(filePath: string): Date | undefined {
+    // filePath === "branch-Name_2016-10-19-22-47-49.json"
+    // filePath === "branch-Name_2016-10-19-22-47.json"
+
+    // Parse out 2 capture groups, the date and the time
+    const dateParseRegex: RegExp = /_([0-9]{4}-[0-9]{2}-[0-9]{2}).*([0-9]{2}-[0-9]{2}(-[0-9]{2})?)/;
+
+    // matches[1] === "2016-10-19"
+    // matches[2] === "22:47:49"
+    const matches: RegExpMatchArray | null = filePath.match(dateParseRegex);
+
+    if (matches) {
+      const formattedTime: string = matches[2].replace('-', ':');
+      return new Date(`${matches[1]}T${formattedTime}Z`);
+    }
+    return undefined;
   }
 
   /**
